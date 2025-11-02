@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Github, Linkedin, Mail, FileText } from "lucide-react";
 import heroBg from "@/assets/hero-bg.jpg";
 
@@ -38,6 +38,14 @@ const Hero = () => {
             >
               View Projects
             </Button>
+            <a
+              href="/resume_ai.pdf"
+              download="Koshal_Goyal_Resume.pdf"
+              className={buttonVariants({ size: "lg", variant: "outline" }) + " border-primary/50 hover:border-primary hover:bg-primary/10"}
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              Download Resume
+            </a>
             <Button 
               size="lg" 
               variant="outline"
@@ -72,7 +80,7 @@ const Hero = () => {
               <Mail size={28} />
             </a>
             <a 
-              href="https://leetcode.com/koshalg30" 
+              href="https://leetcode.com/u/koshal_g30/" 
               target="_blank" 
               rel="noopener noreferrer"
               className="text-muted-foreground hover:text-primary transition-colors"

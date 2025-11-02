@@ -1,19 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 
-interface GitHubRepo {
-  id: number;
-  name: string;
-  full_name: string;
-  description: string | null;
-  html_url: string;
-  stargazers_count: number;
-  forks_count: number;
-  language: string | null;
-  topics: string[];
-  updated_at: string;
-  fork: boolean;
-}
-
 interface Project {
   title: string;
   description: string;
@@ -23,63 +9,113 @@ interface Project {
   forks?: number;
 }
 
-const fetchGitHubRepos = async (username: string): Promise<GitHubRepo[]> => {
-  const response = await fetch(
-    `https://api.github.com/users/${username}/repos?sort=updated&per_page=100`
-  );
-  
+interface GitHubGraphQLResponse {
+  data: {
+    user: {
+      pinnedItems: {
+        nodes: Array<{
+          name: string;
+          description: string | null;
+          url: string;
+          stargazerCount: number;
+          forkCount: number;
+          primaryLanguage: {
+            name: string;
+          } | null;
+          repositoryTopics: {
+            nodes: Array<{
+              topic: {
+                name: string;
+              };
+            }>;
+          };
+        }>;
+      };
+    };
+  };
+}
+
+const fetchPinnedRepos = async (username: string): Promise<GitHubGraphQLResponse> => {
+  const query = `
+    query {
+      user(login: "${username}") {
+        pinnedItems(first: 6, types: REPOSITORY) {
+          nodes {
+            ... on Repository {
+              name
+              description
+              url
+              stargazerCount
+              forkCount
+              primaryLanguage {
+                name
+              }
+              repositoryTopics(first: 5) {
+                nodes {
+                  topic {
+                    name
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const response = await fetch('https://api.github.com/graphql', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ query }),
+  });
+
   if (!response.ok) {
-    throw new Error('Failed to fetch repositories');
+    throw new Error('Failed to fetch pinned repositories');
   }
-  
+
   return response.json();
 };
 
-const transformRepoToProject = (repo: GitHubRepo): Project => {
+const transformRepoToProject = (repo: any): Project => {
   const tech: string[] = [];
-  
+
   // Add primary language
-  if (repo.language) {
-    tech.push(repo.language);
+  if (repo.primaryLanguage?.name) {
+    tech.push(repo.primaryLanguage.name);
   }
-  
+
   // Add topics as tech stack
-  if (repo.topics && repo.topics.length > 0) {
-    tech.push(...repo.topics.slice(0, 3)); // Limit to 3 topics
+  if (repo.repositoryTopics?.nodes) {
+    const topics = repo.repositoryTopics.nodes
+      .map((node: any) => node.topic.name)
+      .slice(0, 4); // Limit to 4 topics
+    tech.push(...topics);
   }
-  
+
   return {
     title: repo.name
       .split('-')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' '),
     description: repo.description || 'No description available',
     tech: tech.length > 0 ? tech : ['Code'],
-    github: repo.html_url,
-    stars: repo.stargazers_count > 0 ? repo.stargazers_count : undefined,
-    forks: repo.forks_count > 0 ? repo.forks_count : undefined,
+    github: repo.url,
+    stars: repo.stargazerCount > 0 ? repo.stargazerCount : undefined,
+    forks: repo.forkCount > 0 ? repo.forkCount : undefined,
   };
 };
 
 export const useGitHubRepos = (username: string) => {
   return useQuery({
-    queryKey: ['github-repos', username],
-    queryFn: () => fetchGitHubRepos(username),
+    queryKey: ['github-pinned-repos', username],
+    queryFn: () => fetchPinnedRepos(username),
     staleTime: 1000 * 60 * 10, // Cache for 10 minutes
-    select: (repos) => {
-      // Filter out forks and sort by stars/updated date
-      const ownRepos = repos.filter(repo => !repo.fork);
-      
-      // Sort by stars first, then by update date
-      const sortedRepos = ownRepos.sort((a, b) => {
-        if (b.stargazers_count !== a.stargazers_count) {
-          return b.stargazers_count - a.stargazers_count;
-        }
-        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
-      });
-      
-      // Take top 6 repos and transform them
-      return sortedRepos.slice(0, 6).map(transformRepoToProject);
+    select: (response) => {
+      const pinnedRepos = response.data.user.pinnedItems.nodes;
+      return pinnedRepos.map(transformRepoToProject);
     },
   });
 };
